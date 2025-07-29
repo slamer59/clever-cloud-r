@@ -85,7 +85,10 @@ jobs:
       - name: Create or get Clever Cloud app
         id: clever_app
         run: |
+          # Ensure we're logged in in the correct directory
           cd front
+          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
+          
           APP_NAME="${{ steps.vars.outputs.app_alias }}"
           ORG_ID="${{ secrets.ORGA_ID }}"
 
@@ -114,6 +117,7 @@ jobs:
       - name: Set environment variables
         run: |
           cd front
+          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
           # Only set environment variables that have values
           [ -n "${{ secrets.CC_CACHE_DEPENDENCIES }}" ] && clever env set CC_CACHE_DEPENDENCIES "${{ secrets.CC_CACHE_DEPENDENCIES }}" || echo "Skipping CC_CACHE_DEPENDENCIES (empty)"
           [ -n "${{ secrets.CC_CGI_IMPLEMENTATION }}" ] && clever env set CC_CGI_IMPLEMENTATION "${{ secrets.CC_CGI_IMPLEMENTATION }}" || echo "Skipping CC_CGI_IMPLEMENTATION (empty)"
@@ -136,6 +140,7 @@ jobs:
       - name: Deploy to Clever Cloud
         run: |
           cd front
+          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
           if [ "${{ steps.vars.outputs.force_deploy }}" = "true" ]; then
             clever deploy --force
           else
