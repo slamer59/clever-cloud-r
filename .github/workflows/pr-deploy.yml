@@ -101,26 +101,21 @@ jobs:
           APP_NAME="${{ steps.vars.outputs.app_alias }}"
           ORG_ID="${{ secrets.ORGA_ID }}"
 
-          # Check if app already exists (handle JSON parsing errors)
-          APP_ID=$(clever applications --format json 2>/dev/null | jq -r ".[] | select(.name == \"$APP_NAME\") | .id" 2>/dev/null || echo "")
-
-          if [ -z "$APP_ID" ]; then
-            echo "Creating new Clever Cloud app: $APP_NAME"
-            clever create --type node --alias "$APP_NAME" --region par --org "$ORG_ID"
-            APP_ID=$(clever applications --format json | jq -r ".[] | select(.name == \"$APP_NAME\") | .id")
-            
-            # Scale the instance
-            clever scale --flavor "${{ steps.vars.outputs.scale }}"
-            
-            echo "Created app with ID: $APP_ID"
+          # Try to link to existing app by alias first
+          if clever link "$APP_NAME" 2>/dev/null; then
+            echo "Successfully linked to existing app: $APP_NAME"
+            APP_ID=$(clever status --format json 2>/dev/null | jq -r '.id' 2>/dev/null || echo "")
           else
-            echo "Using existing app: $APP_ID"
-            clever link "$APP_ID"
-            
-            # Update scale if needed
-            clever scale --flavor "${{ steps.vars.outputs.scale }}"
+            echo "App $APP_NAME doesn't exist, creating new one..."
+            clever create --type node --alias "$APP_NAME" --region par --org "$ORG_ID"
+            # The app should be automatically linked after creation
+            APP_ID=$(clever status --format json 2>/dev/null | jq -r '.id' 2>/dev/null || echo "")
           fi
-
+          
+          # Scale the instance
+          clever scale --flavor "${{ steps.vars.outputs.scale }}"
+          
+          echo "Using app with ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
 
       - name: Set environment variables
