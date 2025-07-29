@@ -60,9 +60,10 @@ jobs:
             echo "force_deploy=false" >> $GITHUB_OUTPUT
           fi
 
-          # Set app alias based on PR number
-          echo "app_alias=eclaireur-pr-${{ github.event.number || github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
-          echo "app_url=https://eclaireur-pr-${{ github.event.number || github.event.inputs.pr_number }}.cleverapps.io" >> $GITHUB_OUTPUT
+          # Set app alias based on repo name and PR number
+          REPO_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          echo "app_alias=${REPO_NAME}-PR-${{ github.event.number || github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          echo "app_url=https://${REPO_NAME}-PR-${{ github.event.number || github.event.inputs.pr_number }}.cleverapps.io" >> $GITHUB_OUTPUT
 
       - name: Install Clever CLI
         run: |
