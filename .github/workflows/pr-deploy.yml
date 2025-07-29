@@ -118,10 +118,14 @@ jobs:
           echo "Using app with ID: $APP_ID"
           echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
 
-      - name: Set environment variables
+      - name: Set environment variables and deploy
         run: |
           cd front
-          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
+          # Clean tokens
+          TOKEN=$(echo "${{ secrets.CLEVER_TOKEN }}" | tr -d '\n\r ')
+          SECRET=$(echo "${{ secrets.CLEVER_SECRET }}" | tr -d '\n\r ')
+          clever login --token "$TOKEN" --secret "$SECRET"
+          
           # Only set environment variables that have values
           [ -n "${{ secrets.CC_CACHE_DEPENDENCIES }}" ] && clever env set CC_CACHE_DEPENDENCIES "${{ secrets.CC_CACHE_DEPENDENCIES }}" || echo "Skipping CC_CACHE_DEPENDENCIES (empty)"
           [ -n "${{ secrets.CC_CGI_IMPLEMENTATION }}" ] && clever env set CC_CGI_IMPLEMENTATION "${{ secrets.CC_CGI_IMPLEMENTATION }}" || echo "Skipping CC_CGI_IMPLEMENTATION (empty)"
@@ -140,11 +144,8 @@ jobs:
           clever env set CC_NODE_BUILD_TOOL "yarn"
           clever env set NODE_OPTIONS "--max-old-space-size=${{ steps.vars.outputs.scale == 'XS' && '1024' || steps.vars.outputs.scale == 'S' && '2048' || steps.vars.outputs.scale == 'M' && '4096' || '8192' }}"
           clever env set CC_PRE_BUILD_HOOK "yarn cache clean"
-
-      - name: Deploy to Clever Cloud
-        run: |
-          cd front
-          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
+          
+          # Deploy
           if [ "${{ steps.vars.outputs.force_deploy }}" = "true" ]; then
             clever deploy --force
           else
