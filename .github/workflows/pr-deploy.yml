@@ -90,7 +90,7 @@ jobs:
 
           if [ -z "$APP_ID" ]; then
             echo "Creating new Clever Cloud app: $APP_NAME"
-            clever create --type node --name "$APP_NAME" --region par --org "$ORG_ID"
+            clever create --type node --alias "$APP_NAME" --region par --org "$ORG_ID"
             APP_ID=$(clever applications --format json | jq -r ".[] | select(.name == \"$APP_NAME\") | .id")
             
             # Scale the instance
