@@ -74,20 +74,24 @@ jobs:
       - name: Setup Clever CLI credentials  
         run: |
           mkdir -p ~/.config/clever-cloud
-          cat > ~/.config/clever-cloud/clever-tools.json << 'EOF'
-          {"token":"${{ secrets.CLEVER_TOKEN }}","secret":"${{ secrets.CLEVER_SECRET }}"}
-          EOF
+          echo '{"token":"${{ secrets.CLEVER_TOKEN }}","secret":"${{ secrets.CLEVER_SECRET }}"}' > ~/.config/clever-cloud/clever-tools.json
           
-      - name: Login to Clever Cloud
+      - name: Verify credentials and login
         run: |
+          echo "Checking credentials file..."
+          ls -la ~/.config/clever-cloud/
+          cat ~/.config/clever-cloud/clever-tools.json
+          
+          echo "Attempting login..."
           clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
+          
+          echo "Checking login status..."
+          clever profile
 
       - name: Create or get Clever Cloud app
         id: clever_app
         run: |
-          # Ensure we're logged in in the correct directory
           cd front
-          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
           
           APP_NAME="${{ steps.vars.outputs.app_alias }}"
           ORG_ID="${{ secrets.ORGA_ID }}"
