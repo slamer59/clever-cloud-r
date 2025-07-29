@@ -64,33 +64,79 @@ jobs:
           echo "app_alias=eclaireur-pr-${{ github.event.number || github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
           echo "app_url=https://eclaireur-pr-${{ github.event.number || github.event.inputs.pr_number }}.cleverapps.io" >> $GITHUB_OUTPUT
 
+      - name: Install Clever CLI
+        run: |
+          curl -O https://clever-tools.clever-cloud.com/releases/latest/clever-tools-latest_linux.tar.gz
+          tar xvzf clever-tools-latest_linux.tar.gz
+          sudo mv clever-tools-latest_linux/clever /usr/local/bin/
+          rm -rf clever-tools-latest_linux*
+
+      - name: Setup Clever CLI credentials
+        run: |
+          mkdir -p ~/.config/clever-cloud
+          cat > ~/.config/clever-cloud/clever-tools.json << EOF
+          {"token":"${{ secrets.CLEVER_TOKEN }}","secret":"${{ secrets.CLEVER_SECRET }}"}
+          EOF
+
+      - name: Create or get Clever Cloud app
+        id: clever_app
+        run: |
+          cd front
+          APP_NAME="${{ steps.vars.outputs.app_alias }}"
+          ORG_ID="${{ secrets.ORGA_ID }}"
+
+          # Check if app already exists
+          APP_ID=$(clever applications --format json | jq -r ".[] | select(.name == \"$APP_NAME\") | .id" || echo "")
+
+          if [ -z "$APP_ID" ]; then
+            echo "Creating new Clever Cloud app: $APP_NAME"
+            clever create --type node --name "$APP_NAME" --region par --org "$ORG_ID"
+            APP_ID=$(clever applications --format json | jq -r ".[] | select(.name == \"$APP_NAME\") | .id")
+            
+            # Scale the instance
+            clever scale --flavor "${{ steps.vars.outputs.scale }}"
+            
+            echo "Created app with ID: $APP_ID"
+          else
+            echo "Using existing app: $APP_ID"
+            clever link "$APP_ID"
+            
+            # Update scale if needed
+            clever scale --flavor "${{ steps.vars.outputs.scale }}"
+          fi
+
+          echo "app_id=$APP_ID" >> $GITHUB_OUTPUT
+
+      - name: Set environment variables
+        run: |
+          cd front
+          # Only set environment variables that have values
+          [ -n "${{ secrets.CC_CACHE_DEPENDENCIES }}" ] && clever env set CC_CACHE_DEPENDENCIES "${{ secrets.CC_CACHE_DEPENDENCIES }}" || echo "Skipping CC_CACHE_DEPENDENCIES (empty)"
+          [ -n "${{ secrets.CC_CGI_IMPLEMENTATION }}" ] && clever env set CC_CGI_IMPLEMENTATION "${{ secrets.CC_CGI_IMPLEMENTATION }}" || echo "Skipping CC_CGI_IMPLEMENTATION (empty)"
+          [ -n "${{ secrets.CC_NODE_DEV_DEPENDENCIES }}" ] && clever env set CC_NODE_DEV_DEPENDENCIES "${{ secrets.CC_NODE_DEV_DEPENDENCIES }}" || echo "Skipping CC_NODE_DEV_DEPENDENCIES (empty)"
+          [ -n "${{ secrets.CC_WEBROOT }}" ] && clever env set CC_WEBROOT "${{ secrets.CC_WEBROOT }}" || echo "Skipping CC_WEBROOT (empty)"
+          [ -n "${{ secrets.HOST }}" ] && clever env set HOST "${{ secrets.HOST }}" || echo "Skipping HOST (empty)"
+          [ -n "${{ secrets.NODE_ENV }}" ] && clever env set NODE_ENV "${{ secrets.NODE_ENV }}" || echo "Skipping NODE_ENV (empty)"
+          [ -n "${{ secrets.PORT }}" ] && clever env set PORT "${{ secrets.PORT }}" || echo "Skipping PORT (empty)"
+          clever env set NEXT_PUBLIC_BASE_URL "${{ steps.vars.outputs.app_url }}"
+          [ -n "${{ secrets.POSTGRESQL_ADDON_HOST }}" ] && clever env set POSTGRESQL_ADDON_HOST "${{ secrets.POSTGRESQL_ADDON_HOST }}" || echo "Skipping POSTGRESQL_ADDON_HOST (empty)"
+          [ -n "${{ secrets.POSTGRESQL_ADDON_DB }}" ] && clever env set POSTGRESQL_ADDON_DB "${{ secrets.POSTGRESQL_ADDON_DB }}" || echo "Skipping POSTGRESQL_ADDON_DB (empty)"
+          [ -n "${{ secrets.POSTGRESQL_ADDON_USER }}" ] && clever env set POSTGRESQL_ADDON_USER "${{ secrets.POSTGRESQL_ADDON_USER }}" || echo "Skipping POSTGRESQL_ADDON_USER (empty)"
+          [ -n "${{ secrets.POSTGRESQL_ADDON_PORT }}" ] && clever env set POSTGRESQL_ADDON_PORT "${{ secrets.POSTGRESQL_ADDON_PORT }}" || echo "Skipping POSTGRESQL_ADDON_PORT (empty)"
+          [ -n "${{ secrets.POSTGRESQL_ADDON_PASSWORD }}" ] && clever env set POSTGRESQL_ADDON_PASSWORD "${{ secrets.POSTGRESQL_ADDON_PASSWORD }}" || echo "Skipping POSTGRESQL_ADDON_PASSWORD (empty)"
+          [ -n "${{ secrets.POSTGRESQL_ADDON_URI }}" ] && clever env set POSTGRESQL_ADDON_URI "${{ secrets.POSTGRESQL_ADDON_URI }}" || echo "Skipping POSTGRESQL_ADDON_URI (empty)"
+          clever env set CC_NODE_BUILD_TOOL "yarn"
+          clever env set NODE_OPTIONS "--max-old-space-size=${{ steps.vars.outputs.scale == 'XS' && '1024' || steps.vars.outputs.scale == 'S' && '2048' || steps.vars.outputs.scale == 'M' && '4096' || '8192' }}"
+          clever env set CC_PRE_BUILD_HOOK "yarn cache clean"
+
       - name: Deploy to Clever Cloud
-        uses: 47ng/actions-clever-cloud@v2.0.0
-        with:
-          deployPath: ./front
-          alias: ${{ steps.vars.outputs.app_alias }}
-          force: ${{ steps.vars.outputs.force_deploy }}
-          setEnv: |
-            CC_CACHE_DEPENDENCIES=${{ secrets.CC_CACHE_DEPENDENCIES }}
-            CC_CGI_IMPLEMENTATION=${{ secrets.CC_CGI_IMPLEMENTATION }}
-            CC_NODE_DEV_DEPENDENCIES=${{ secrets.CC_NODE_DEV_DEPENDENCIES }}
-            CC_WEBROOT=${{ secrets.CC_WEBROOT }}
-            HOST=${{ secrets.HOST }}
-            NODE_ENV=${{ secrets.NODE_ENV }}
-            PORT=${{ secrets.PORT }}
-            NEXT_PUBLIC_BASE_URL=${{ steps.vars.outputs.app_url }}
-            POSTGRESQL_ADDON_HOST=${{ secrets.POSTGRESQL_ADDON_HOST }}
-            POSTGRESQL_ADDON_DB=${{ secrets.POSTGRESQL_ADDON_DB }}
-            POSTGRESQL_ADDON_USER=${{ secrets.POSTGRESQL_ADDON_USER }}
-            POSTGRESQL_ADDON_PORT=${{ secrets.POSTGRESQL_ADDON_PORT }}
-            POSTGRESQL_ADDON_PASSWORD=${{ secrets.POSTGRESQL_ADDON_PASSWORD }}
-            POSTGRESQL_ADDON_URI=${{ secrets.POSTGRESQL_ADDON_URI }}
-            CC_NODE_BUILD_TOOL=yarn
-            NODE_OPTIONS=--max-old-space-size=${{ steps.vars.outputs.scale == 'XS' && '1024' || steps.vars.outputs.scale == 'S' && '2048' || steps.vars.outputs.scale == 'M' && '4096' || '8192' }}
-            CC_PRE_BUILD_HOOK=yarn cache clean
-        env:
-          CLEVER_TOKEN: ${{ secrets.CLEVER_TOKEN }}
-          CLEVER_SECRET: ${{ secrets.CLEVER_SECRET }}
+        run: |
+          cd front
+          if [ "${{ steps.vars.outputs.force_deploy }}" = "true" ]; then
+            clever deploy --force
+          else
+            clever deploy
+          fi
 
       - name: Update PR comment
         if: github.event_name == 'pull_request'
