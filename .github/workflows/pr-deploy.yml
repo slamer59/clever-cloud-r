@@ -74,16 +74,21 @@ jobs:
       - name: Setup Clever CLI credentials  
         run: |
           mkdir -p ~/.config/clever-cloud
-          echo '{"token":"${{ secrets.CLEVER_TOKEN }}","secret":"${{ secrets.CLEVER_SECRET }}"}' > ~/.config/clever-cloud/clever-tools.json
+          # Remove any trailing whitespace/newlines from secrets
+          TOKEN=$(echo "${{ secrets.CLEVER_TOKEN }}" | tr -d '\n\r ')
+          SECRET=$(echo "${{ secrets.CLEVER_SECRET }}" | tr -d '\n\r ')
+          echo "{\"token\":\"$TOKEN\",\"secret\":\"$SECRET\"}" > ~/.config/clever-cloud/clever-tools.json
           
       - name: Verify credentials and login
         run: |
           echo "Checking credentials file..."
           ls -la ~/.config/clever-cloud/
-          cat ~/.config/clever-cloud/clever-tools.json
           
           echo "Attempting login..."
-          clever login --token "${{ secrets.CLEVER_TOKEN }}" --secret "${{ secrets.CLEVER_SECRET }}"
+          # Remove any trailing whitespace/newlines from secrets
+          TOKEN=$(echo "${{ secrets.CLEVER_TOKEN }}" | tr -d '\n\r ')
+          SECRET=$(echo "${{ secrets.CLEVER_SECRET }}" | tr -d '\n\r ')
+          clever login --token "$TOKEN" --secret "$SECRET"
           
           echo "Checking login status..."
           clever profile
