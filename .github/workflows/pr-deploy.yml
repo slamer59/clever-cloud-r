@@ -142,7 +142,9 @@ jobs:
           [ -n "${{ secrets.POSTGRESQL_ADDON_PASSWORD }}" ] && clever env set POSTGRESQL_ADDON_PASSWORD "${{ secrets.POSTGRESQL_ADDON_PASSWORD }}" || echo "Skipping POSTGRESQL_ADDON_PASSWORD (empty)"
           [ -n "${{ secrets.POSTGRESQL_ADDON_URI }}" ] && clever env set POSTGRESQL_ADDON_URI "${{ secrets.POSTGRESQL_ADDON_URI }}" || echo "Skipping POSTGRESQL_ADDON_URI (empty)"
           clever env set CC_NODE_BUILD_TOOL "yarn"
-          clever env set NODE_OPTIONS "--max-old-space-size=${{ steps.vars.outputs.scale == 'XS' && '1024' || steps.vars.outputs.scale == 'S' && '2048' || steps.vars.outputs.scale == 'M' && '4096' || '8192' }}"
+          # Set NODE_OPTIONS with proper escaping
+          NODE_MEMORY="${{ steps.vars.outputs.scale == 'XS' && '1024' || steps.vars.outputs.scale == 'S' && '2048' || steps.vars.outputs.scale == 'M' && '4096' || '8192' }}"
+          clever env set NODE_OPTIONS "--max-old-space-size=${NODE_MEMORY}"
           clever env set CC_PRE_BUILD_HOOK "yarn cache clean"
           
           # Deploy
