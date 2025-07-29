@@ -1,0 +1,178 @@
+name: PR Future Deployment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+    paths:
+      - "front/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to deploy"
+        required: true
+        type: string
+      scale:
+        description: "Instance scale (XS, S, M, L, XL, XXL)"
+        required: false
+        default: "XS"
+        type: choice
+        options:
+          - XS
+          - S
+          - M
+          - L
+          - XL
+          - XXL
+      force_deploy:
+        description: "Force deployment (ignore fast-forward)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy:
+    name: Deploy PR to Clever Cloud
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set deployment variables
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "pr_number=${{ github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+            echo "scale=${{ github.event.inputs.scale }}" >> $GITHUB_OUTPUT
+            echo "force_deploy=${{ github.event.inputs.force_deploy }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_number=${{ github.event.number }}" >> $GITHUB_OUTPUT
+            echo "scale=XS" >> $GITHUB_OUTPUT
+            echo "force_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Set app alias based on PR number
+          echo "app_alias=eclaireur-pr-${{ github.event.number || github.event.inputs.pr_number }}" >> $GITHUB_OUTPUT
+          echo "app_url=https://eclaireur-pr-${{ github.event.number || github.event.inputs.pr_number }}.cleverapps.io" >> $GITHUB_OUTPUT
+
+      - name: Deploy to Clever Cloud
+        uses: 47ng/actions-clever-cloud@v2.0.0
+        with:
+          deployPath: ./front
+          alias: ${{ steps.vars.outputs.app_alias }}
+          force: ${{ steps.vars.outputs.force_deploy }}
+          setEnv: |
+            CC_CACHE_DEPENDENCIES=${{ secrets.CC_CACHE_DEPENDENCIES }}
+            CC_CGI_IMPLEMENTATION=${{ secrets.CC_CGI_IMPLEMENTATION }}
+            CC_NODE_DEV_DEPENDENCIES=${{ secrets.CC_NODE_DEV_DEPENDENCIES }}
+            CC_WEBROOT=${{ secrets.CC_WEBROOT }}
+            HOST=${{ secrets.HOST }}
+            NODE_ENV=${{ secrets.NODE_ENV }}
+            PORT=${{ secrets.PORT }}
+            NEXT_PUBLIC_BASE_URL=${{ steps.vars.outputs.app_url }}
+            POSTGRESQL_ADDON_HOST=${{ secrets.POSTGRESQL_ADDON_HOST }}
+            POSTGRESQL_ADDON_DB=${{ secrets.POSTGRESQL_ADDON_DB }}
+            POSTGRESQL_ADDON_USER=${{ secrets.POSTGRESQL_ADDON_USER }}
+            POSTGRESQL_ADDON_PORT=${{ secrets.POSTGRESQL_ADDON_PORT }}
+            POSTGRESQL_ADDON_PASSWORD=${{ secrets.POSTGRESQL_ADDON_PASSWORD }}
+            POSTGRESQL_ADDON_URI=${{ secrets.POSTGRESQL_ADDON_URI }}
+            CC_NODE_BUILD_TOOL=yarn
+            NODE_OPTIONS=--max-old-space-size=${{ steps.vars.outputs.scale == 'XS' && '1024' || steps.vars.outputs.scale == 'S' && '2048' || steps.vars.outputs.scale == 'M' && '4096' || '8192' }}
+            CC_PRE_BUILD_HOOK=yarn cache clean
+        env:
+          CLEVER_TOKEN: ${{ secrets.CLEVER_TOKEN }}
+          CLEVER_SECRET: ${{ secrets.CLEVER_SECRET }}
+
+      - name: Update PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🚀 Future PR Deployment')
+            );
+
+            const commentBody = `🚀 **Future PR Deployment**
+
+            ✅ **Deployed successfully**
+            - **URL**: ${{ steps.vars.outputs.app_url }}
+            - **Scale**: ${{ steps.vars.outputs.scale }}
+            - **Branch**: \`${{ github.head_ref }}\`
+            - **Commit**: \`${{ github.event.pull_request.head.sha }}\`
+
+            ---
+            *Deployment managed by GitHub Action*`;
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+
+  cleanup:
+    name: Cleanup deployment
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Update PR comment on close
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🚀 Future PR Deployment')
+            );
+
+            if (botComment) {
+              const commentBody = `🚀 **Future PR Deployment**
+              
+              ⚠️ **Deployment cleaned up**
+              - PR has been closed/merged
+              - Resources may be automatically cleaned up by Clever Cloud
+              
+              ---
+              *Deployment managed by GitHub Action*`;
+              
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+            }
